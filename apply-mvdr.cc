@@ -10,7 +10,8 @@
 #include "vad.h"
 #include "parse-option.h"
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 
     const char *usage = "Do MVDR beamforming\n"
                         "Usage: apply-mvdr multi_channel_file output_file\n";
@@ -21,11 +22,11 @@ int main(int argc, char *argv[]) {
     float frame_shift = 0.01; // 10ms
     po.Register("frame-shift", &frame_shift, "frame shift for mvdr");
     int fft_point = 2048;
-    po.Register("fft-point", &fft_point, 
+    po.Register("fft-point", &fft_point,
                 "num fft point for spectrum calculation, must be 2^n"
                 "and must greater than frame_len * sample_rate");
     float energy_thresh = 1.5e-7;
-    po.Register("energy-thresh", &energy_thresh, 
+    po.Register("energy-thresh", &energy_thresh,
                 "energy threshold for energy based vad");
     int sil_to_speech_trigger = 3;
     po.Register("sil-to-speech-trigger", &sil_to_speech_trigger,
@@ -35,7 +36,8 @@ int main(int argc, char *argv[]) {
                 "num frames for speech to silence trigger");
     po.Read(argc, argv);
 
-    if (po.NumArgs() != 2) {
+    if (po.NumArgs() != 2)
+    {
         po.PrintUsage();
         exit(1);
     }
@@ -49,7 +51,7 @@ int main(int argc, char *argv[]) {
            "channels %d \n"
            "bits_per_sample_ %d \n",
            input_file.c_str(),
-           reader.SampleRate(), 
+           reader.SampleRate(),
            reader.NumChannel(),
            reader.BitsPerSample());
 
@@ -62,51 +64,60 @@ int main(int argc, char *argv[]) {
 
     const float *pcm = reader.Data();
     float *out_pcm = (float *)calloc(sizeof(float), num_sample);
-    float *tdoa = (float *)calloc(sizeof(float), num_channel);
-   
+    int *tdoa = (int *)calloc(sizeof(int), num_channel);
+
     Vad vad;
     VadInit(&vad, energy_thresh, sil_to_speech_trigger, speech_to_sil_trigger);
 
     //  printf("fft_point_input: %d \n",fft_point);
- 
+
     Mvdr mvdr(sample_rate, fft_point, num_channel);
 
-    for (int i = 0; i < num_sample; i += num_point_shift) {
+    for (int i = 0; i < num_sample; i += num_point_shift)
+    {
         // last frame
-         if (i + num_point_per_frame > num_sample) break; 
-         // rearrange channel data
-         float *data = (float *)calloc(sizeof(float), 
+        if (i + num_point_per_frame > num_sample)
+            break;
+        // rearrange channel data
+        float *data = (float *)calloc(sizeof(float),
                                       num_point_per_frame * num_channel);
-        for (int j = 0; j < num_channel; j++) {
-            for (int k = 0; k < num_point_per_frame; k++) {
+        for (int j = 0; j < num_channel; j++)
+        {
+            for (int k = 0; k < num_point_per_frame; k++)
+            {
                 data[j * num_point_per_frame + k] = pcm[(i + k) * num_channel + j];
             }
         }
+
+        // apply tdoa
+        GccPhatTdoa(data, num_channel, num_point_per_frame * num_channel, 0, 16, tdoa);
+        // print tdoa value
+        for (int j = 0; j < num_channel; j++){
+            printf("%d ", tdoa[j]);
+        }
+        printf("\n");
         // Because gccphat based time-delay is not very precise
         // so here we time-delay is not supported here
         // we suppose the signal arrive sensors at the same time(90)
-    
-        // do vad (is noise or not)
-        bool is_speech = IsSpeech(&vad, data, num_point_per_frame); 
 
-       //printf("is_speech:%d\n", is_speech);
+        // do vad (is noise or not)
+        bool is_speech = IsSpeech(&vad, data, num_point_per_frame);
+
+        //printf("is_speech:%d\n", is_speech);
         // do MVDR
         //  printf("num_point_per_frame: %d \n",num_point_per_frame);
-        mvdr.DoBeamformimg(data, num_point_per_frame, !is_speech, 
+        mvdr.DoBeamformimg(data, num_point_per_frame, !is_speech,
                            tdoa, out_pcm + i);
         free(data);
     }
 
     // Write outfile
-    WavWriter wav_writer(out_pcm, num_sample, 1, sample_rate, 
+    WavWriter wav_writer(out_pcm, num_sample, 1, sample_rate,
                          reader.BitsPerSample());
     wav_writer.Write(output_file.c_str());
 
     free(out_pcm);
     free(tdoa);
-    
+
     return 0;
 }
-
-
-

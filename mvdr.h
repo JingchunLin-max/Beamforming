@@ -57,7 +57,7 @@ public:
     
     // @params is_speech: 0 represent none speech otherwise speech
     void DoBeamformimg(const float *data, int num_sample, bool is_noise,
-            float *tdoa, float *out) {
+            int *tdoa, float *out) {
 
         //  printf("fft_point_: %d \n", fft_point_);
          is_noise=1;
